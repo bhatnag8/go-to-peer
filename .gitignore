@@ -1,0 +1,16 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+go-to-peer
+
+# IDE Settings
+.idea/
+.vscode/
+
+# Logs
+*.log
+
+# Dependencies
+vendor/
