@@ -1,0 +1,13 @@
+==================================== Covered ==========================================================
+Size	Purpose
+1 KB	Test edge cases for very small files.
+100 KB	Simulate small but non-trivial files (e.g., small documents or configurations).
+1 MB	Test typical small-to-medium file sizes.
+10 MB	Simulate moderately sized files, common in real-world scenarios (e.g., photos or videos).
+100 MB	Stress test chunking logic with larger files.
+
+==================================== Not Covered ======================================================
+Size	Purpose
+1 GB	Test performance and scalability with large files.
+10 GB	For stress testing large file transfers (if your system can handle it).
+1 TB	Extreme stress testing for scalability and resource limits.
