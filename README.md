@@ -1,10 +1,6 @@
 
 # Go-To-Peer: A P2P File Sharing System in <img src="https://upload.wikimedia.org/wikipedia/commons/0/05/Go_Logo_Blue.svg" alt="Go Logo" width="70" />
 
-<!--![Go Logo](https://upload.wikimedia.org/wikipedia/commons/0/05/Go_Logo_Blue.svg)  -->
-<!--*A blazing-fast peer-to-peer file-sharing application built with Go.*-->
-
----
 
 ## Overview
 Go-To-Peer is a decentralized application inspired by BitTorrent that enables users to upload and download files seamlessly. Designed with Go’s robust concurrency model, this application handles file chunking, peer discovery, and concurrent file transfers with efficiency and reliability.
