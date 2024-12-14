@@ -10,6 +10,7 @@ import (
 	"flag" // Command-line flag parsing library
 	"fmt"  // Formatted I/O library
 	"go-to-peer/file"
+	"go-to-peer/peer"
 	"go-to-peer/test"
 	"go-to-peer/util" // Local utility package for logging and other reusable components
 )
@@ -29,8 +30,29 @@ func main() {
 	// -test-chunking: Used to test file chunking and reconstruction functionality.
 	testChunking := flag.Bool("test-chunking", false, "Test file chunking and reconstruction")
 
+	// CLI flags for peer connectivity.
+	serverPort := flag.String("server", "", "Start a server on the specified port")
+	peerAddress := flag.String("connect", "", "Connect to a peer at the specified address")
+
 	// Parse the command-line arguments provided by the user.
 	flag.Parse()
+
+	// Start the server if the "server" flag is provided.
+	if *serverPort != "" {
+		peer.StartServer(*serverPort)
+		return
+	}
+
+	// Connect to a peer if the "connect" flag is provided.
+	if *peerAddress != "" {
+		peer.ConnectToPeer(*peerAddress)
+		return
+	}
+
+	// If no arguments are provided, show usage.
+	fmt.Println("Usage:")
+	fmt.Println("  -server <port>  : Start a server on the specified port")
+	fmt.Println("  -connect <addr> : Connect to a peer at the specified address")
 
 	// Handle the CLI commands based on user input.
 	if *uploadCmd != "" {
