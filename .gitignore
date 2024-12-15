@@ -14,3 +14,8 @@ go-to-peer
 
 # Dependencies
 vendor/
+
+# Files for Sharing
+downloads
+server_files/*
+chunks

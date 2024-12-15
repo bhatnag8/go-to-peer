@@ -8,7 +8,10 @@ package peer
 // - "os": For error handling and logging.
 // - "go-to-peer/util": For logging significant events.
 import (
-	"bufio"           // Buffered reading/writing to TCP connections.
+	"bufio" // Buffered reading/writing to TCP connections.
+	"encoding/json"
+
+	//"encoding/json"
 	"fmt"             // Formatted I/O for user-facing messages.
 	"go-to-peer/util" // Logging utility for significant events.
 	"net"             // TCP networking for peer connections.
@@ -63,6 +66,13 @@ func StartServer(port string) {
 // Behavior:
 // - Sends metadata to the connected peer.
 // - Reads incoming messages and logs or processes them as necessary.
+// Add a new message type for file catalog requests and responses.
+const (
+	FileCatalogRequest  = "FILE_CATALOG_REQUEST"
+	FileCatalogResponse = "FILE_CATALOG_RESPONSE"
+)
+
+// Updated handleConnection to handle catalog requests.
 func handleConnection(conn net.Conn) {
 	defer func() {
 		if closeErr := conn.Close(); closeErr != nil {
@@ -70,35 +80,12 @@ func handleConnection(conn net.Conn) {
 		}
 	}()
 
-	// Log and print the connection establishment.
 	peerAddr := conn.RemoteAddr().String()
 	util.Logger.Printf("Connected to peer: %s", peerAddr)
 	fmt.Printf("Peer connected: %s\n", peerAddr)
 
-	// Dynamically generate metadata for the peer connection.
-	metadata := Metadata{
-		PeerID:    generatePeerID(), // Generate a unique PeerID (dynamic logic here).
-		Hostname:  conn.LocalAddr().String(),
-		ChunkList: getAvailableChunks(), // Replace with actual logic for fetching available chunks.
-	}
-
-	// Construct and send the metadata message.
-	message := Message{
-		Type:    "METADATA",
-		Payload: metadata,
-	}
-	data, err := EncodeMessage(message)
-	if err == nil {
-		_, _ = conn.Write(append(data, '\n')) // Send JSON-encoded metadata.
-		util.Logger.Printf("Sent metadata to peer %s: %+v", peerAddr, metadata)
-	} else {
-		util.Logger.Printf("Failed to encode or send metadata to peer %s: %v", peerAddr, err)
-	}
-
-	// Read and handle incoming messages from the peer.
 	reader := bufio.NewReader(conn)
 	for {
-		// Read a message from the peer.
 		message, err := reader.ReadString('\n')
 		if err != nil {
 			util.Logger.Printf("Connection closed by peer %s: %v", peerAddr, err)
@@ -106,27 +93,117 @@ func handleConnection(conn net.Conn) {
 			return
 		}
 
-		// Decode the received message.
+		// Decode the message.
 		msg, decodeErr := DecodeMessage([]byte(message))
 		if decodeErr != nil {
 			util.Logger.Printf("Failed to decode message from peer %s: %v", peerAddr, decodeErr)
 			continue
 		}
 
-		// Log and display the received message.
-		util.Logger.Printf("Received message from peer %s: %+v", peerAddr, msg)
-		fmt.Printf("Message from peer %s: %+v\n", peerAddr, msg)
+		// Handle different message types.
+		switch msg.Type {
+
+		// Handle FILE_CATALOG_REQUEST messages.
+		case FileCatalogRequest:
+			// Generate the file catalog dynamically.
+			catalog, err := createCatalog("server_files") // Directory with server files.
+			if err != nil {
+				util.Logger.Printf("Failed to generate file catalog: %v", err)
+				continue
+			}
+
+			// Send the file catalog to the client.
+			response := Message{
+				Type:    FileCatalogResponse,
+				Payload: catalog,
+			}
+			data, encodeErr := EncodeMessage(response)
+			if encodeErr == nil {
+				_, _ = conn.Write(append(data, '\n'))
+				util.Logger.Printf("Sent file catalog to peer %s", peerAddr)
+			} else {
+				util.Logger.Printf("Failed to encode FILE_CATALOG_RESPONSE: %v", encodeErr)
+			}
+
+		// Handle FILE_METADATA_REQUEST messages.
+		case FileMetadataRequest:
+			var payload FileMetadataRequestPayload
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			_ = json.Unmarshal(payloadBytes, &payload)
+
+			// Get the catalog and find the requested file.
+			catalog, err := createCatalog("server_files")
+			if err != nil {
+				util.Logger.Printf("Failed to load catalog: %v", err)
+				continue
+			}
+
+			var responsePayload FileMetadataResponsePayload
+			for _, file := range catalog.Files {
+				if file.Name == payload.FileName {
+					responsePayload = FileMetadataResponsePayload{
+						FileName: file.Name,
+						Chunks:   file.Chunks,
+					}
+					break
+				}
+			}
+
+			// Send the file metadata to the client.
+			response := Message{
+				Type:    FileMetadataResponse,
+				Payload: responsePayload,
+			}
+			data, encodeErr := EncodeMessage(response)
+			if encodeErr == nil {
+				_, _ = conn.Write(append(data, '\n'))
+				util.Logger.Printf("Sent metadata for file %s to peer %s", payload.FileName, peerAddr)
+			} else {
+				util.Logger.Printf("Failed to encode FILE_METADATA_RESPONSE: %v", encodeErr)
+			}
+
+		// Add logic for other message types (e.g., CHUNK_REQUEST) here as needed.
+		case ChunkRequest:
+			var payload ChunkRequestPayload
+			payloadBytes, _ := json.Marshal(msg.Payload)
+			_ = json.Unmarshal(payloadBytes, &payload)
+
+			// Fetch the requested chunk.
+			chunkData, chunkHash, err := getChunkData(payload.ChunkID)
+			if err != nil {
+				util.Logger.Printf("Failed to retrieve chunk %s for peer %s: %v", payload.ChunkID, peerAddr, err)
+				continue
+			}
+
+			// Respond with the chunk data and hash.
+			response := Message{
+				Type: ChunkResponse,
+				Payload: ChunkResponsePayload{
+					ChunkID: payload.ChunkID,
+					Data:    chunkData,
+					Hash:    chunkHash,
+				},
+			}
+			data, encodeErr := EncodeMessage(response)
+			if encodeErr == nil {
+				_, _ = conn.Write(append(data, '\n'))
+				util.Logger.Printf("Sent chunk %s to peer %s", payload.ChunkID, peerAddr)
+			} else {
+				util.Logger.Printf("Failed to encode CHUNK_RESPONSE for chunk %s: %v", payload.ChunkID, encodeErr)
+			}
+
+		default:
+			util.Logger.Printf("Received unknown message type from peer %s: %s", peerAddr, msg.Type)
+		}
 	}
 }
 
-// generatePeerID generates a unique identifier for the server.
-// Replace this with a proper implementation (e.g., UUID or other mechanisms).
-func generatePeerID() string {
-	return "server-123" // Placeholder for now.
-}
-
-// getAvailableChunks returns a list of available file chunks on the server.
-// Replace this with logic to fetch actual chunks.
-func getAvailableChunks() []string {
-	return []string{"chunk_0", "chunk_1"} // Placeholder logic.
+// getChunkData retrieves the data and hash for the requested chunk.
+// Replace this with actual file handling logic.
+func getChunkData(chunkID string) ([]byte, string, error) {
+	// Simulate reading chunk data from a file.
+	// Replace this with actual chunk retrieval logic.
+	data := []byte("Simulated chunk data for " + chunkID)
+	hash := util.CalculateHash(data) // Replace with a real hashing function.
+	return data, hash, nil
 }

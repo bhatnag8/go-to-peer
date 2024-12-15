@@ -75,3 +75,37 @@ func DecodeMessage(data []byte) (Message, error) {
 	}
 	return msg, nil
 }
+
+// Add new message types for chunk transfers.
+const (
+	ChunkRequest  = "CHUNK_REQUEST"  // Message type for requesting a file chunk.
+	ChunkResponse = "CHUNK_RESPONSE" // Message type for sending a requested chunk.
+)
+
+// ChunkRequestPayload represents the payload structure for chunk requests.
+type ChunkRequestPayload struct {
+	ChunkID string `json:"chunk_id"` // ID of the requested chunk.
+}
+
+// ChunkResponsePayload represents the payload structure for chunk responses.
+type ChunkResponsePayload struct {
+	ChunkID string `json:"chunk_id"` // ID of the chunk being sent.
+	Data    []byte `json:"data"`     // Actual chunk data.
+	Hash    string `json:"hash"`     // Hash of the chunk data for integrity verification.
+}
+
+const (
+	FileMetadataRequest  = "FILE_METADATA_REQUEST"  // Request metadata for a specific file.
+	FileMetadataResponse = "FILE_METADATA_RESPONSE" // Response containing file metadata.
+)
+
+// FileMetadataRequestPayload represents the payload for metadata requests.
+type FileMetadataRequestPayload struct {
+	FileName string `json:"file_name"` // The name of the file being requested.
+}
+
+// FileMetadataResponsePayload represents the payload for metadata responses.
+type FileMetadataResponsePayload struct {
+	FileName string   `json:"file_name"` // The name of the file.
+	Chunks   []string `json:"chunks"`    // List of chunk IDs for the file.
+}
