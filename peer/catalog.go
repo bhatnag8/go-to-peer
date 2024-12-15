@@ -43,7 +43,6 @@ func createCatalog(directory string) (*FileCatalog, error) {
 		}
 
 		// Generate chunks for the file.
-		fileName := filepath.Base(path)
 		err = file.SplitFile(path)
 		if err != nil {
 			return fmt.Errorf("error splitting file %s: %w", path, err)
@@ -51,9 +50,9 @@ func createCatalog(directory string) (*FileCatalog, error) {
 
 		// Create chunk IDs for the file.
 		chunks := []string{}
-		chunkDir := "chunks"
-		filePrefix := strings.TrimSuffix(fileName, filepath.Ext(fileName))
-		chunkFiles, err := filepath.Glob(fmt.Sprintf("%s/%s_chunk_*", chunkDir, filePrefix))
+		fileName := filepath.Base(path)
+		fileChunkDir := filepath.Join("chunks", strings.TrimSuffix(fileName, filepath.Ext(fileName)))
+		chunkFiles, err := filepath.Glob(filepath.Join(fileChunkDir, "chunk_*"))
 		if err != nil {
 			return fmt.Errorf("error retrieving chunks for file %s: %w", fileName, err)
 		}

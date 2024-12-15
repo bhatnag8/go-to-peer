@@ -10,6 +10,8 @@ package peer
 import (
 	"bufio" // Buffered reading/writing to TCP connections.
 	"encoding/json"
+	"path/filepath"
+	"strings"
 
 	//"encoding/json"
 	"fmt"             // Formatted I/O for user-facing messages.
@@ -168,14 +170,36 @@ func handleConnection(conn net.Conn) {
 			payloadBytes, _ := json.Marshal(msg.Payload)
 			_ = json.Unmarshal(payloadBytes, &payload)
 
-			// Fetch the requested chunk.
-			chunkData, chunkHash, err := getChunkData(payload.ChunkID)
+			// Find the file name for the requested chunk.
+			fileName := "" // Placeholder for the actual file name
+			catalog, err := createCatalog("server_files")
+			if err == nil {
+				for _, file := range catalog.Files {
+					for _, chunk := range file.Chunks {
+						if chunk == payload.ChunkID {
+							fileName = file.Name
+							break
+						}
+					}
+					if fileName != "" {
+						break
+					}
+				}
+			}
+
+			if fileName == "" {
+				util.Logger.Printf("Failed to find file for chunk %s", payload.ChunkID)
+				continue
+			}
+
+			// Retrieve the chunk data.
+			chunkData, chunkHash, err := getChunkData(payload.ChunkID, fileName)
 			if err != nil {
 				util.Logger.Printf("Failed to retrieve chunk %s for peer %s: %v", payload.ChunkID, peerAddr, err)
 				continue
 			}
 
-			// Respond with the chunk data and hash.
+			// Respond with the chunk data.
 			response := Message{
 				Type: ChunkResponse,
 				Payload: ChunkResponsePayload{
@@ -198,12 +222,15 @@ func handleConnection(conn net.Conn) {
 	}
 }
 
-// getChunkData retrieves the data and hash for the requested chunk.
-// Replace this with actual file handling logic.
-func getChunkData(chunkID string) ([]byte, string, error) {
-	// Simulate reading chunk data from a file.
-	// Replace this with actual chunk retrieval logic.
-	data := []byte("Simulated chunk data for " + chunkID)
-	hash := util.CalculateHash(data) // Replace with a real hashing function.
+func getChunkData(chunkID string, fileName string) ([]byte, string, error) {
+	filePrefix := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+	chunkFilePath := filepath.Join("chunks", filePrefix, chunkID)
+
+	data, err := os.ReadFile(chunkFilePath)
+	if err != nil {
+		return nil, "", fmt.Errorf("failed to read chunk %s: %w", chunkID, err)
+	}
+
+	hash := util.CalculateHash(data)
 	return data, hash, nil
 }
