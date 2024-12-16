@@ -12,212 +12,148 @@ import (
 	"encoding/json" // JSON encoding/decoding for structured message exchange.
 	"fmt"           // Formatted I/O for user-facing messages.
 	"go-to-peer/file"
+	"strings"
+	"sync"
+
+	//"go-to-peer/file"
 	"go-to-peer/util"
 	"net" // TCP networking for peer connections.
 	"os"
-	"sync"
+	//"strings"
+	//"sync"
 )
 
-// ConnectToPeer establishes a connection to the specified peer address, exchanges messages,
-// and logs significant events and errors. It uses a JSON-based communication protocol.
-//
-// Parameters:
-// - address: The target peer's address in the format "host:port" (e.g., "127.0.0.1:8080").
-//
-// Behavior:
-// - Sends a "HELLO" message to the peer.
-// - Receives and processes the peer's response (e.g., metadata or other messages).
-func ConnectToPeer(address string, requestedChunk string) {
-	conn, err := net.Dial("tcp", address)
+// DownloadFileFromMultipleServers downloads a file using its hash from multiple servers.
+func DownloadFileFromMultipleServers(fileHash string, fileName string, servers []string) error {
+	// Fetch metadata for the file from one of the servers.
+	catalog, err := fetchCatalog(servers[0])
 	if err != nil {
-		util.Logger.Printf("Failed to connect to peer at %s: %v", address, err)
-		fmt.Printf("Failed to connect to peer at %s. Check logs for details.\n", address)
-		return
-	}
-	defer func() {
-		if closeErr := conn.Close(); closeErr != nil {
-			util.Logger.Printf("Warning: Failed to close connection to %s: %v", address, closeErr)
-		}
-	}()
-
-	util.Logger.Printf("Connected to peer at %s", address)
-	fmt.Printf("Successfully connected to peer at %s\n", address)
-
-	// Request a specific chunk.
-	request := Message{
-		Type: ChunkRequest,
-		Payload: ChunkRequestPayload{
-			ChunkID: requestedChunk,
-		},
-	}
-	data, err := EncodeMessage(request)
-	if err == nil {
-		_, _ = conn.Write(append(data, '\n'))
-		util.Logger.Printf("Requested chunk %s from peer at %s", requestedChunk, address)
-	} else {
-		util.Logger.Printf("Failed to encode CHUNK_REQUEST: %v", err)
-		return
+		return fmt.Errorf("failed to fetch catalog from server: %w", err)
 	}
 
-	// Read the chunk response.
-	reader := bufio.NewReader(conn)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		util.Logger.Printf("Failed to read response from peer at %s: %v", address, err)
-		return
-	}
-
-	// Decode and process the chunk response.
-	respMsg, decodeErr := DecodeMessage([]byte(response))
-	if decodeErr != nil {
-		util.Logger.Printf("Failed to decode response from peer at %s: %v", address, decodeErr)
-		return
-	}
-
-	if respMsg.Type == ChunkResponse {
-		var payload ChunkResponsePayload
-		payloadBytes, _ := json.Marshal(respMsg.Payload)
-		_ = json.Unmarshal(payloadBytes, &payload)
-
-		// Verify the hash of the received chunk.
-		if util.CalculateHash(payload.Data) == payload.Hash {
-			util.Logger.Printf("Received and verified chunk %s from peer at %s", payload.ChunkID, address)
-			fmt.Printf("Successfully received chunk %s\n", payload.ChunkID)
-		} else {
-			util.Logger.Printf("Chunk %s received from peer at %s failed integrity check", payload.ChunkID, address)
-			fmt.Printf("Integrity check failed for chunk %s\n", payload.ChunkID)
-		}
-	}
-}
-
-// RequestFileCatalog requests the file catalog from the server.
-//
-// Parameters:
-// - address: The server's address (e.g., "127.0.0.1:8080").
-func RequestFileCatalog(address string) {
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		util.Logger.Printf("Failed to connect to server at %s: %v", address, err)
-		fmt.Printf("Failed to connect to server at %s. Check logs for details.\n", address)
-		return
-	}
-	defer func() {
-		if closeErr := conn.Close(); closeErr != nil {
-			util.Logger.Printf("Warning: Failed to close connection to server at %s: %v", address, closeErr)
-		}
-	}()
-
-	// Send a FILE_CATALOG_REQUEST message.
-	request := Message{
-		Type: FileCatalogRequest,
-	}
-	data, err := EncodeMessage(request)
-	if err == nil {
-		_, _ = conn.Write(append(data, '\n'))
-		util.Logger.Printf("Requested file catalog from server at %s", address)
-	} else {
-		util.Logger.Printf("Failed to encode FILE_CATALOG_REQUEST: %v", err)
-		return
-	}
-
-	// Read the file catalog response.
-	reader := bufio.NewReader(conn)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		util.Logger.Printf("Failed to read file catalog response from server at %s: %v", address, err)
-		return
-	}
-
-	// Decode and display the file catalog.
-	respMsg, decodeErr := DecodeMessage([]byte(response))
-	if decodeErr != nil {
-		util.Logger.Printf("Failed to decode file catalog response from server at %s: %v", address, decodeErr)
-		return
-	}
-	if respMsg.Type == FileCatalogResponse {
-		var catalog FileCatalog
-		catalogBytes, _ := json.Marshal(respMsg.Payload)
-		_ = json.Unmarshal(catalogBytes, &catalog)
-		fmt.Printf("Received File Catalog:\n")
-		for _, file := range catalog.Files {
-			fmt.Printf("- %s (Size: %d bytes, Chunks: %d)\n", file.Name, file.Size, len(file.Chunks))
-		}
-		util.Logger.Printf("Successfully received and displayed file catalog from server at %s", address)
-	}
-}
-
-func DownloadFile(address, fileName string) error {
-	fmt.Println("Requesting file catalog...")
-	catalog, err := fetchCatalog(address)
-	if err != nil {
-		return fmt.Errorf("failed to fetch catalog: %w", err)
-	}
-
-	// Check if the requested file exists in the catalog and get its chunks.
 	var fileChunks []string
 	for _, file := range catalog.Files {
-		if file.Name == fileName {
+		if file.Hash == fileHash {
 			fileChunks = file.Chunks
 			break
 		}
 	}
 	if len(fileChunks) == 0 {
-		return fmt.Errorf("file %s not found on server", fileName)
+		return fmt.Errorf("file with hash %s not found on servers", fileHash)
 	}
 
-	fmt.Printf("File %s is available with %d chunks. Starting download...\n", fileName, len(fileChunks))
-	util.Logger.Printf("File %s is available for download with %d chunks", fileName, len(fileChunks))
+	// Distribute chunks across servers in a round-robin manner.
+	chunkToServer := make(map[string]string)
+	for i, chunk := range fileChunks {
+		chunkToServer[chunk] = servers[i%len(servers)]
+	}
 
-	// Create worker pool for parallel downloads.
+	// Display progress to the user.
+	progress := make(chan string, len(fileChunks))
+	defer close(progress)
+	go func() {
+		for msg := range progress {
+			fmt.Println(msg)
+		}
+	}()
+
+	// Download chunks in parallel.
 	chunkQueue := make(chan string, len(fileChunks))
 	errChan := make(chan error, len(fileChunks))
 	var wg sync.WaitGroup
 
-	numWorkers := 4 // Adjust concurrency level as needed.
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go downloadChunkWorker(address, chunkQueue, &wg, errChan)
-	}
-
-	// Enqueue chunks for download.
-	for _, chunk := range fileChunks {
-		chunkQueue <- chunk
+	for chunk, server := range chunkToServer {
+		chunkQueue <- fmt.Sprintf("%s|%s", server, chunk) // Encode server and chunk.
 	}
 	close(chunkQueue)
 
-	// Wait for all workers to finish.
+	numWorkers := 4 // Adjust as needed.
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for job := range chunkQueue {
+				parts := strings.Split(job, "|")
+				server, chunk := parts[0], parts[1]
+				err := downloadChunkFromServer(server, chunk, fileHash, progress)
+				if err != nil {
+					errChan <- err
+				}
+			}
+		}()
+	}
+
 	wg.Wait()
 	close(errChan)
 
-	// Check for errors from workers.
 	for err := range errChan {
 		if err != nil {
-			util.Logger.Printf("Error during chunk download: %v", err)
-			return err
+			return fmt.Errorf("error during chunk download: %w", err)
 		}
 	}
 
 	// Reconstruct the file after all chunks are downloaded.
-	outputFile := fmt.Sprintf("downloads/%s", fileName)
-	err = file.ReconstructFile(outputFile, fileName)
-
+	outputDir := "downloads"
+	err = file.ReconstructFile(outputDir, fileHash)
 	if err != nil {
-		util.Logger.Printf("Failed to reconstruct file %s: %v", fileName, err)
-		return err
+		fmt.Printf("Failed to reconstruct file: %v\n", err)
 	}
 
 	util.Logger.Printf("Successfully downloaded and reconstructed file: %s", fileName)
 	return nil
 }
 
-// saveChunk saves the downloaded chunk to the "chunks" directory.
-func saveChunk(chunkID string, data []byte) error {
-	err := os.MkdirAll("chunks", 0755)
-	if err != nil {
-		return err
+func RequestFileCatalog(servers []string) {
+	for _, address := range servers {
+		conn, err := net.Dial("tcp", address)
+		if err != nil {
+			util.Logger.Printf("Failed to connect to server at %s: %v", address, err)
+			fmt.Printf("Failed to connect to server at %s. Check logs for details.\n", address)
+			continue
+		}
+		defer conn.Close()
+
+		// Send a FILE_CATALOG_REQUEST message.
+		request := Message{Type: FileCatalogRequest}
+		data, err := EncodeMessage(request)
+		if err != nil {
+			util.Logger.Printf("Failed to encode FILE_CATALOG_REQUEST: %v", err)
+			continue
+		}
+		_, _ = conn.Write(append(data, '\n'))
+		util.Logger.Printf("Requested file catalog from server at %s", address)
+
+		// Read the file catalog response.
+		reader := bufio.NewReader(conn)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			util.Logger.Printf("Failed to read file catalog response from server at %s: %v", address, err)
+			continue
+		}
+
+		respMsg, decodeErr := DecodeMessage([]byte(response))
+		if decodeErr != nil {
+			util.Logger.Printf("Failed to decode file catalog response from server at %s: %v", address, decodeErr)
+			continue
+		}
+
+		if respMsg.Type != FileCatalogResponse {
+			util.Logger.Printf("Unexpected response type: %s", respMsg.Type)
+			fmt.Printf("Unexpected response type: %s\n", respMsg.Type)
+			continue
+		}
+
+		var catalog FileCatalog
+		payloadBytes, _ := json.Marshal(respMsg.Payload)
+		_ = json.Unmarshal(payloadBytes, &catalog)
+
+		// Display the catalog for the server.
+		fmt.Printf("Received File Catalog from server %s:\n", address)
+		for _, file := range catalog.Files {
+			fmt.Printf("- %s (Size: %d bytes, Chunks: %d, Hash: %s)\n", file.Name, file.Size, len(file.Chunks), file.Hash)
+		}
+		util.Logger.Printf("Successfully received and displayed file catalog from server %s", address)
 	}
-	chunkPath := fmt.Sprintf("chunks/%s", chunkID)
-	return os.WriteFile(chunkPath, data, 0644)
 }
 
 func downloadChunk(conn net.Conn, chunkID string) ([]byte, error) {
@@ -269,7 +205,28 @@ func downloadChunk(conn net.Conn, chunkID string) ([]byte, error) {
 	return chunkPayload.Data, nil
 }
 
-// fetchCatalog retrieves the file catalog from the server.
+// FetchFileCatalogs fetches catalogs from multiple servers and maps file hashes to servers.
+func FetchFileCatalogs(servers []string) (map[string][]string, error) {
+	fileSources := make(map[string][]string) // Map: file hash -> list of servers.
+
+	for _, server := range servers {
+		catalog, err := fetchCatalog(server)
+		if err != nil {
+			util.Logger.Printf("Failed to fetch catalog from %s: %v", server, err)
+			continue
+		}
+
+		for _, file := range catalog.Files {
+			if _, exists := fileSources[file.Hash]; !exists {
+				fileSources[file.Hash] = []string{}
+			}
+			fileSources[file.Hash] = append(fileSources[file.Hash], server)
+		}
+	}
+
+	return fileSources, nil
+}
+
 func fetchCatalog(address string) (*FileCatalog, error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
@@ -278,9 +235,7 @@ func fetchCatalog(address string) (*FileCatalog, error) {
 	}
 	defer conn.Close()
 
-	request := Message{
-		Type: FileCatalogRequest,
-	}
+	request := Message{Type: FileCatalogRequest}
 	data, err := EncodeMessage(request)
 	if err != nil {
 		util.Logger.Printf("Failed to encode FILE_CATALOG_REQUEST: %v", err)
@@ -310,33 +265,39 @@ func fetchCatalog(address string) (*FileCatalog, error) {
 	var catalog FileCatalog
 	payloadBytes, _ := json.Marshal(respMsg.Payload)
 	_ = json.Unmarshal(payloadBytes, &catalog)
-	util.Logger.Printf("Received file catalog: %+v", catalog)
+	util.Logger.Printf("Received file catalog from %s: %+v", address, catalog)
 	return &catalog, nil
 }
 
-func downloadChunkWorker(address string, chunkQueue <-chan string, wg *sync.WaitGroup, errChan chan<- error) {
-	defer wg.Done()
-
-	conn, err := net.Dial("tcp", address)
+func downloadChunkFromServer(server string, chunkID string, fileHash string, progress chan<- string) error {
+	conn, err := net.Dial("tcp", server)
 	if err != nil {
-		errChan <- fmt.Errorf("failed to connect to server: %v", err)
-		return
+		return fmt.Errorf("failed to connect to server %s: %w", server, err)
 	}
 	defer conn.Close()
 
-	for chunkID := range chunkQueue {
-		chunkData, err := downloadChunk(conn, chunkID)
-		if err != nil {
-			errChan <- fmt.Errorf("failed to download chunk %s: %v", chunkID, err)
-			return
-		}
-
-		err = saveChunk(chunkID, chunkData)
-		if err != nil {
-			errChan <- fmt.Errorf("failed to save chunk %s: %v", chunkID, err)
-			return
-		}
-
-		util.Logger.Printf("Successfully downloaded and saved chunk %s", chunkID)
+	chunkData, err := downloadChunk(conn, chunkID)
+	if err != nil {
+		return fmt.Errorf("failed to download chunk %s from server %s: %w", chunkID, server, err)
 	}
+
+	err = saveChunk(chunkID, fileHash, chunkData)
+	if err != nil {
+		return fmt.Errorf("failed to save chunk %s: %w", chunkID, err)
+	}
+
+	progress <- fmt.Sprintf("Downloaded chunk %s from server %s", chunkID, server)
+	return nil
+}
+
+func saveChunk(chunkID string, fileHash string, data []byte) error {
+	// Use the file hash to organize chunks.
+	chunksDir := fmt.Sprintf("chunks/%s", fileHash)
+	err := os.MkdirAll(chunksDir, 0755)
+	if err != nil {
+		return fmt.Errorf("failed to create chunks directory: %w", err)
+	}
+
+	chunkPath := fmt.Sprintf("%s/%s", chunksDir, chunkID)
+	return os.WriteFile(chunkPath, data, 0644)
 }

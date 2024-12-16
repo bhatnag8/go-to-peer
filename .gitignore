@@ -19,3 +19,4 @@ vendor/
 downloads
 server_files/*
 chunks
+.DS_Store

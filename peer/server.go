@@ -170,36 +170,32 @@ func handleConnection(conn net.Conn) {
 			payloadBytes, _ := json.Marshal(msg.Payload)
 			_ = json.Unmarshal(payloadBytes, &payload)
 
-			// Find the file name for the requested chunk.
-			fileName := "" // Placeholder for the actual file name
+			// Fetch fileHash from the catalog
 			catalog, err := createCatalog("server_files")
-			if err == nil {
-				for _, file := range catalog.Files {
-					for _, chunk := range file.Chunks {
-						if chunk == payload.ChunkID {
-							fileName = file.Name
-							break
-						}
-					}
-					if fileName != "" {
+			if err != nil {
+				util.Logger.Printf("Failed to load catalog: %v", err)
+				continue
+			}
+
+			fileHash := ""
+			for _, file := range catalog.Files {
+				for _, chunk := range file.Chunks {
+					if chunk == payload.ChunkID {
+						fileHash = file.Hash
 						break
 					}
 				}
+				if fileHash != "" {
+					break
+				}
 			}
 
-			if fileName == "" {
-				util.Logger.Printf("Failed to find file for chunk %s", payload.ChunkID)
-				continue
-			}
-
-			// Retrieve the chunk data.
-			chunkData, chunkHash, err := getChunkData(payload.ChunkID, fileName)
+			chunkData, chunkHash, err := getChunkData(payload.ChunkID, fileHash)
 			if err != nil {
-				util.Logger.Printf("Failed to retrieve chunk %s for peer %s: %v", payload.ChunkID, peerAddr, err)
+				util.Logger.Printf("Failed to retrieve chunk %s: %v", payload.ChunkID, err)
 				continue
 			}
 
-			// Respond with the chunk data.
 			response := Message{
 				Type: ChunkResponse,
 				Payload: ChunkResponsePayload{
@@ -211,9 +207,9 @@ func handleConnection(conn net.Conn) {
 			data, encodeErr := EncodeMessage(response)
 			if encodeErr == nil {
 				_, _ = conn.Write(append(data, '\n'))
-				util.Logger.Printf("Sent chunk %s to peer %s", payload.ChunkID, peerAddr)
+				util.Logger.Printf("Sent chunk %s", payload.ChunkID)
 			} else {
-				util.Logger.Printf("Failed to encode CHUNK_RESPONSE for chunk %s: %v", payload.ChunkID, encodeErr)
+				util.Logger.Printf("Failed to encode CHUNK_RESPONSE: %v", encodeErr)
 			}
 
 		default:
