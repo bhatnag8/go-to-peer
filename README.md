@@ -37,20 +37,23 @@ go mod tidy
 
 ## Usage
 
-### Testing File Chunking and Reconstruction
-Run the following command to test chunking and reconstruction with auto-generated files:
+### Starting the Sever
 ```
-go run main.go -test-chunking
-```
-
-### Uploading Files
-```
-go run main.go -upload <file_path>
+go run main.go -server 8080 &
+go run main.go -server 8081 &
+go run main.go -server 8082 &
 ```
 
+### Viewing the Catalog
+```
+go run main.go -connect 127.0.0.1:8080,127.0.0.1:8081,127.0.0.1:8082 -catalog
+```
+
+
+you need to have a directory called server_files and download in the project
 ### Downloading Files
 ```
-go run main.go -download <file_id>
+go run main.go -connect 127.0.0.1:8080,127.0.0.1:8081,127.0.0.1:8082 -download 49bc20df15e412a64472421e13fe86ff1c5165e18b2afccf160d4dc19fe68a14 -name example.pdf
 ```
 
 ---

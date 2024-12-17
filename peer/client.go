@@ -67,7 +67,7 @@ func DownloadFileFromMultipleServers(fileHash string, fileName string, servers [
 	}
 	close(chunkQueue)
 
-	numWorkers := 4 // Adjust as needed.
+	numWorkers := 10 // Adjust as needed.
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
 		go func() {

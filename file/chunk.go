@@ -14,8 +14,8 @@ import (
 	//"strings"
 )
 
-// ChunkSize defines the size of each file chunk in bytes (1MB).
-const ChunkSize = 1 * 1024 * 1024
+// ChunkSize defines the size of each file chunk in bytes (12MB).
+const ChunkSize = 120 * 1024 * 1024
 
 // SplitFile splits a given file into chunks of fixed size.
 // The chunks are stored in the "chunks" directory with a numbered naming scheme.

@@ -1,17 +1,15 @@
 // Package main is the entry point of the application, handling user commands via a CLI interface.
 package main
 
-// Import statements:
-// - "flag": Used to parse command-line arguments for the CLI interface.
-// - "fmt": Provides formatted I/O functions, like printing to the console.
-// - "go-to-peer/peer": Custom package for client-server communication.
-// - "go-to-peer/util": Custom package for utility functions, such as logging.
 import (
 	"flag" // Command-line flag parsing library
 	"fmt"  // Formatted I/O library
 	"go-to-peer/peer"
 	"go-to-peer/util" // Local utility package for logging and other reusable components
+	"runtime"         // For performance monitoring (CPU usage)
+	//"runtime/debug"   // To collect garbage before measuring performance
 	"strings"
+	"time" // For measuring execution time
 )
 
 // main is the application's entry point.
@@ -31,9 +29,15 @@ func main() {
 	// Parse the command-line arguments provided by the user.
 	flag.Parse()
 
+	// Collect start time and memory stats for performance measurement.
+	startTime := time.Now()
+	var startMemStats runtime.MemStats
+	runtime.ReadMemStats(&startMemStats)
+
 	// Start the server if the "server" flag is provided.
 	if *serverPort != "" {
 		peer.StartServer(*serverPort)
+		measurePerformance(startTime, startMemStats)
 		return
 	}
 
@@ -48,6 +52,7 @@ func main() {
 			if err != nil {
 				fmt.Printf("Error fetching file catalogs: %v\n", err)
 				util.Logger.Printf("Error fetching file catalogs: %v", err)
+				measurePerformance(startTime, startMemStats)
 				return
 			}
 
@@ -59,6 +64,7 @@ func main() {
 					fmt.Printf("  Available on server: %s\n", server)
 				}
 			}
+			measurePerformance(startTime, startMemStats)
 			return
 		}
 
@@ -66,6 +72,7 @@ func main() {
 			// Download the specified file by its hash.
 			if *fileName == "" {
 				fmt.Println("Error: Please specify the original file name using the -name flag.")
+				measurePerformance(startTime, startMemStats)
 				return
 			}
 
@@ -77,6 +84,7 @@ func main() {
 			} else {
 				fmt.Printf("Successfully downloaded file: %s\n", *fileName)
 			}
+			measurePerformance(startTime, startMemStats)
 			return
 		}
 
@@ -85,6 +93,7 @@ func main() {
 		fmt.Println("  -catalog         : List available files on the servers")
 		fmt.Println("  -download <hash> : Download a file by its hash (requires -name flag)")
 		fmt.Println("  -name <name>     : Specify the original file name for the downloaded file")
+		measurePerformance(startTime, startMemStats)
 		return
 	}
 
@@ -95,6 +104,7 @@ func main() {
 	fmt.Println("  -catalog         : List available files on the servers")
 	fmt.Println("  -download <hash> : Download a file by its hash (requires -name flag)")
 	fmt.Println("  -name <name>     : Specify the original file name for the downloaded file")
+	measurePerformance(startTime, startMemStats)
 }
 
 // splitCommaSeparated splits a comma-separated string into a slice of strings.
@@ -103,4 +113,27 @@ func splitCommaSeparated(input string) []string {
 		return []string{}
 	}
 	return strings.Split(input, ",")
+}
+
+// measurePerformance calculates and prints the performance metrics of the program.
+func measurePerformance(startTime time.Time, startMemStats runtime.MemStats) {
+	// Collect end time and memory stats.
+	endTime := time.Now()
+	var endMemStats runtime.MemStats
+	runtime.ReadMemStats(&endMemStats)
+
+	// Calculate elapsed time.
+	elapsedTime := endTime.Sub(startTime)
+
+	// Calculate CPU usage (this is an approximation; for detailed stats, use profiling tools like pprof).
+	cpuPercentage := 100.0 * float64(runtime.NumGoroutine()) / float64(runtime.NumCPU())
+
+	// Calculate memory usage.
+	usedMemory := endMemStats.Alloc - startMemStats.Alloc
+
+	// Print performance metrics.
+	fmt.Printf("\nPerformance Metrics:\n")
+	fmt.Printf("Execution Time: %v\n", elapsedTime)
+	fmt.Printf("Memory Usage: %d bytes\n", usedMemory)
+	fmt.Printf("Approximate CPU Usage: %.2f%%\n", cpuPercentage)
 }
